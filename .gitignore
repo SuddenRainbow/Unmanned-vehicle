@@ -1,0 +1,26 @@
+# Keil MDK 编译产物
+OBJ/
+Listings/
+*.o
+*.d
+*.crf
+*.axf
+*.hex
+*.lnp
+*.dep
+*.htm
+*.map
+*.lst
+*.build_log.htm
+
+# Keil 用户 / 编辑器临时文件
+*.uvguix.*
+*.uvgui.*
+JLinkSettings.ini
+JLinkLog.txt
+*.scvd
+DebugConfig/
+RTE/
+
+# 工程内的重复模板副本（如存在）
+CORE/1_工程模板_跑马灯/
