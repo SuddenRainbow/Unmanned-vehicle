@@ -16,6 +16,8 @@
 
 - **`Hi3861_SG90_UART/`**：**GPIO 模拟 PWM 驱动 SG90 舵机**，支持通过**串口命令**控制舵机转到指定角度（0°/45°/90°/135°/180°）。
 - **`Hi3861_HC-SR04_Tick/`**：**GPIO 驱动 HC-SR04 超声波测距**，使用 **2 个软件定时器**：每 3 秒测距打印距离、每 1 秒打印系统 tick 值（`hi_get_tick`）。
+- **`Hi3861_OLED_Ssd1306/`**：**I2C 驱动 0.91 寸 OLED（SSD1306, 128×32）**，显示字符串 + 时钟，并支持 **16×16 中文字符显示**（"鸿蒙先锋号"点阵由 WQY 字体生成）。
+- **`Hi3861_SHT20_TempHum/`**：**I2C 驱动 SHT20 温湿度传感器**，并用 **信号量（Semaphore）** 实现多任务同步（Task1 每 3 秒释放信号量，Task2 读温湿度、Task3 抢占，交替执行）。
 
 ## 硬件环境
 
@@ -83,12 +85,22 @@ Unmanned-vehicle/
 │   ├── QST_HARDWARE/        # motor/encoder/speed_ctrl(PID)/colorful_led/SYSTEM_CONTROL
 │   ├── CORE/
 │   └── STM32F10x_FWLib/
-└── Hi3861_SG90_UART/        # Hi3861 鸿蒙 GPIO 驱动 SG90 舵机（串口可控）
-    ├── SG90.c               # 舵机 PWM + 串口命令解析 + 多任务
-    └── BUILD.gn             # OpenHarmony 构建定义
+├── Hi3861_SG90_UART/        # Hi3861 鸿蒙 GPIO 驱动 SG90 舵机（串口可控）
+│   ├── SG90.c               # 舵机 PWM + 串口命令解析 + 多任务
+│   └── BUILD.gn             # OpenHarmony 构建定义
 ├── Hi3861_HC-SR04_Tick/     # Hi3861 鸿蒙 GPIO 驱动 HC-SR04 超声波（2 个软件定时器）
-    ├── Hcsr04.c             # 超声波测距 + tick 打印（osTimerNew 定时器）
-    └── BUILD.gn             # OpenHarmony 构建定义
+│   ├── Hcsr04.c             # 超声波测距 + tick 打印（osTimerNew 定时器）
+│   └── BUILD.gn             # OpenHarmony 构建定义
+├── Hi3861_OLED_Ssd1306/     # Hi3861 鸿蒙 I2C 驱动 SSD1306 OLED（含中文点阵）
+│   ├── I2c_Ssd1306.c        # 显示"鸿蒙先锋号" + 时钟
+│   ├── include/             # hal_bsp_ssd1306 驱动 + 字库(ASCII/中文点阵)
+│   ├── src/                 # hal_bsp_ssd1306.c 驱动实现
+│   └── BUILD.gn
+└── Hi3861_SHT20_TempHum/    # Hi3861 鸿蒙 I2C 驱动 SHT20 温湿度 + 信号量同步
+    ├── Sht20.c              # 3 任务信号量演示, 读温湿度
+    ├── include/             # hal_bsp_sht20.h
+    ├── src/                 # hal_bsp_sht20.c 驱动实现
+    └── BUILD.gn
 ```
 
 ## 编译与烧录
@@ -212,6 +224,20 @@ Unmanned-vehicle/
   - 定时器 2：每 1 秒 `hi_get_tick()` 打印当前系统 tick 值。
 - **看门狗**：测距使用 `hi_udelay`/忙等，先 `WatchDogDisable()` 关闭看门狗防止复位（注意 SDK 中函数名 **D 大写**）。
 
+### I2C 驱动 SSD1306 OLED（`Hi3861_OLED_Ssd1306/`）
+
+- **I2C 总线**：OLED 挂 I2C0（SDA=GPIO10、SCL=GPIO9，400kHz），`I2cInit` + `I2cWrite` 收发；从机地址 0x3C。
+- **显示流程**：`SSD1306_Init()` 发初始化命令序列 → `SSD1306_CLS()` 清屏 → `SSD1306_ShowStr(x, y, 字符串, 16)` 显示 8×16 ASCII；页寻址模式：每页 8 行、每字节一列。
+- **中文显示**：BSP 原 `ShowStr` 仅支持 ASCII；新增 **`SSD1306_ShowChineseByIndex()`**，用 16×16 点阵数组显示汉字（"鸿蒙先锋号"5 字点阵由 WQY 字体渲染生成，位序 bit0=顶行）。
+- **注意**：SDK 配置需开启 **`CONFIG_I2C_SUPPORT = y`**（`build/config/usr_config.mk`），否则链接报 `hi_i2c_write undefined`。
+
+### I2C 驱动 SHT20 温湿度 + 信号量（`Hi3861_SHT20_TempHum/`）
+
+- **传感器**：SHT20 挂同一条 I2C0（从机地址 0x40，100kHz），`SHT20_Init()` + `SHT20_ReadData(&temp, &hum)` 读取温湿度（浮点）。
+- **信号量同步**：`osSemaphoreNew(4, 0, NULL)` 创建初始值为 0 的信号量；
+  - Task1：每 3 秒 `osSemaphoreRelease` 释放一次；
+  - Task2 / Task3：`osSemaphoreAcquire(osWaitForever)` 阻塞抢信号量，谁抢到谁执行（Task2 读温湿度打印、Task3 打印自己的标记）——实现任务间同步/互斥。
+
 ## 课程收获
 
 ### 环境配置
@@ -234,4 +260,7 @@ Unmanned-vehicle/
 - 学会了在 **OpenHarmony** 中用 **GPIO 软件模拟 PWM** 驱动 **SG90 舵机**，理解脉宽与舵机角度的对应关系；
 - 学会了 **Hi3861 的 UART 收发**（`UartInit`/`UartRead`）与 **CMSIS-OS 多任务**（`osThreadNew`/`osMutexNew`），以及用串口命令控制外设；
 - 学会了 **HC-SR04 超声波测距**的 GPIO 驱动原理（10µs 触发脉冲 + ECHO 高电平测时 + 距离换算）；
-- 学会了 **CMSIS-OS 软件定时器**（`osTimerNew`/`osTimerStart`/`osTimerPeriodic`）与 **`hi_get_tick`** 系统 tick 的使用，理解 tick 与时间的关系。
+- 学会了 **CMSIS-OS 软件定时器**（`osTimerNew`/`osTimerStart`/`osTimerPeriodic`）与 **`hi_get_tick`** 系统 tick 的使用，理解 tick 与时间的关系；
+- 学会了 **I2C 总线**概念与 **`I2cInit`/`I2cWrite`** 的使用，完成 **SSD1306 OLED** 字符/汉字显示；
+- 学会了 **SHT20 温湿度传感器**的 I2C 读写与数据换算（`SHT20_ReadData`）；
+- 学会了 **CMSIS-OS 信号量**（`osSemaphoreNew`/`osSemaphoreAcquire`/`osSemaphoreRelease`），理解用信号量进行任务间同步与共享资源互斥。
