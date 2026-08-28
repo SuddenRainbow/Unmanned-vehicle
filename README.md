@@ -10,6 +10,7 @@
 
 - **`跑马灯/`**：串口收发打印 + 炫彩灯跑马灯（驱动前后共 **12 颗 WS2812 可寻址 RGB 灯**，前灯 6 颗 + 尾灯 6 颗）。
 - **`4_PWM驱动机电/`**：**TIM4 输出 PWM** 驱动左右两个电机，支持调速与正反转，并可用串口命令控制电机启停。
+- **6_PID速度闭环直线/**：**增量式 PID 速度闭环**，编码器反馈控制两轮转速一致，上电自动启动并保持直线行驶。
 
 **二、Hi3861 鸿蒙应用部分**（基于 **OpenHarmony 1.0 + Hi3861V100**，使用 gn/ninja + scons 构建）：
 
@@ -76,6 +77,12 @@ Unmanned-vehicle/
 │   ├── QST_HARDWARE/        # motor 电机驱动、colorful_led、SYSTEM_CONTROL
 │   ├── CORE/
 │   └── STM32F10x_FWLib/
+├── 6_PID速度闭环直线/        # STM32 增量式PID速度闭环直行
+│   ├── USER/                # main.c（上电自动跑）
+│   ├── SYSTEM/
+│   ├── QST_HARDWARE/        # motor/encoder/speed_ctrl(PID)/colorful_led/SYSTEM_CONTROL
+│   ├── CORE/
+│   └── STM32F10x_FWLib/
 └── Hi3861_SG90_UART/        # Hi3861 鸿蒙 GPIO 驱动 SG90 舵机（串口可控）
     ├── SG90.c               # 舵机 PWM + 串口命令解析 + 多任务
     └── BUILD.gn             # OpenHarmony 构建定义
@@ -88,7 +95,7 @@ Unmanned-vehicle/
 
 ### STM32 部分
 
-1. 用 Keil MDK5 打开对应工程的工程文件（`跑马灯/USER/Template.uvprojx` 或 `4_PWM驱动机电/USER/Template.uvprojx`）。
+1. 用 Keil MDK5 打开对应工程的工程文件（`跑马灯/USER/Template.uvprojx`、`4_PWM驱动机电/USER/Template.uvprojx` 或 `6_PID速度闭环直线/USER/Template.uvprojx`）。
 2. 菜单 **Project → Rebuild all target files**（或 `F7`），确保 `0 Error(s)`。
 3. 连接 ST-Link，点 **Download**（`F8`）烧录到单片机。
 4. 建议在 `Options for Target → Debug → ST-Link → Settings → Flash Download` 勾选 **Reset and Run**，下载后自动运行。
@@ -223,6 +230,7 @@ Unmanned-vehicle/
 - 学会了 **TIM 定时器 PWM** 的配置（时基、比较输出、预装载），并能计算 PWM 频率与占空比；
 - 学会了用 **PWM 驱动 L9110S 电机**，实现转速调节与正反转，以及用串口命令控制电机启停；
 - 学会了 **跑马灯 / 电机启停**等状态逻辑的编写，理解了「数据写入 → 刷新输出」的编程思想；
+- 学会了 **增量式 PID 速度闭环** 的设计与调参（Kp/Ki、积分/输出限幅、软启动），用编码器反馈让小车自动保持直线行驶；
 - 学会了在 **OpenHarmony** 中用 **GPIO 软件模拟 PWM** 驱动 **SG90 舵机**，理解脉宽与舵机角度的对应关系；
 - 学会了 **Hi3861 的 UART 收发**（`UartInit`/`UartRead`）与 **CMSIS-OS 多任务**（`osThreadNew`/`osMutexNew`），以及用串口命令控制外设；
 - 学会了 **HC-SR04 超声波测距**的 GPIO 驱动原理（10µs 触发脉冲 + ECHO 高电平测时 + 距离换算）；
