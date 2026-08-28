@@ -14,6 +14,7 @@
 **二、Hi3861 鸿蒙应用部分**（基于 **OpenHarmony 1.0 + Hi3861V100**，使用 gn/ninja + scons 构建）：
 
 - **`Hi3861_SG90_UART/`**：**GPIO 模拟 PWM 驱动 SG90 舵机**，支持通过**串口命令**控制舵机转到指定角度（0°/45°/90°/135°/180°）。
+- **`Hi3861_HC-SR04_Tick/`**：**GPIO 驱动 HC-SR04 超声波测距**，使用 **2 个软件定时器**：每 3 秒测距打印距离、每 1 秒打印系统 tick 值（`hi_get_tick`）。
 
 ## 硬件环境
 
@@ -77,6 +78,9 @@ Unmanned-vehicle/
 │   └── STM32F10x_FWLib/
 └── Hi3861_SG90_UART/        # Hi3861 鸿蒙 GPIO 驱动 SG90 舵机（串口可控）
     ├── SG90.c               # 舵机 PWM + 串口命令解析 + 多任务
+    └── BUILD.gn             # OpenHarmony 构建定义
+├── Hi3861_HC-SR04_Tick/     # Hi3861 鸿蒙 GPIO 驱动 HC-SR04 超声波（2 个软件定时器）
+    ├── Hcsr04.c             # 超声波测距 + tick 打印（osTimerNew 定时器）
     └── BUILD.gn             # OpenHarmony 构建定义
 ```
 
@@ -159,6 +163,19 @@ Unmanned-vehicle/
    done
    ```
 
+## 使用方法四：超声波测距（`Hi3861_HC-SR04_Tick/`）
+
+1. 烧录后打开串口助手（115200），复位后开始输出。
+2. **每 3 秒**打印一次距离：
+   ```
+   distance is 16.0 (cm)
+   ```
+3. **每 1 秒**打印一次系统 tick 值：
+   ```
+   current tick: 1234
+   ```
+4. 在超声波模块前伸手/挡板，`distance` 数值会变化。
+
 ## 核心代码思路
 
 ### 炫彩灯跑马灯（`跑马灯/`）
@@ -180,6 +197,14 @@ Unmanned-vehicle/
 - **串口命令解析**：`UartInit(WIFI_IOT_UART_IDX_0, ...)` 显式初始化 UART0（115200/8N1），`UartRead()` 轮询读取，`atoi()` 把数字字符串转角度。
 - **多任务**：用 CMSIS-OS `osThreadNew()` 创建 `UartTask` 后台任务，`APP_FEATURE_INIT()` 挂载应用入口。
 
+### GPIO 驱动 HC-SR04 超声波（`Hi3861_HC-SR04_Tick/`）
+
+- **触发与测量**：GPIO7 输出 ≥10µs 高电平脉冲触发 HC-SR04，模块收到后回 ECHO 高电平；GPIO8 读输入，用 `hi_get_us()` 测高电平持续时间 `time`，`距离 = time × 0.034 / 2`（cm）。
+- **2 个软件定时器**：`osTimerNew(callback, osTimerPeriodic, ...)` 创建，`osTimerStart(timer, ticks)` 启动（系统 10ms/tick，300 tick=3s、100 tick=1s）。
+  - 定时器 1：每 3 秒 `GetDistance()` 并打印距离；
+  - 定时器 2：每 1 秒 `hi_get_tick()` 打印当前系统 tick 值。
+- **看门狗**：测距使用 `hi_udelay`/忙等，先 `WatchDogDisable()` 关闭看门狗防止复位（注意 SDK 中函数名 **D 大写**）。
+
 ## 课程收获
 
 ### 环境配置
@@ -199,4 +224,6 @@ Unmanned-vehicle/
 - 学会了用 **PWM 驱动 L9110S 电机**，实现转速调节与正反转，以及用串口命令控制电机启停；
 - 学会了 **跑马灯 / 电机启停**等状态逻辑的编写，理解了「数据写入 → 刷新输出」的编程思想；
 - 学会了在 **OpenHarmony** 中用 **GPIO 软件模拟 PWM** 驱动 **SG90 舵机**，理解脉宽与舵机角度的对应关系；
-- 学会了 **Hi3861 的 UART 收发**（`UartInit`/`UartRead`）与 **CMSIS-OS 多任务**（`osThreadNew`/`osMutexNew`），以及用串口命令控制外设。
+- 学会了 **Hi3861 的 UART 收发**（`UartInit`/`UartRead`）与 **CMSIS-OS 多任务**（`osThreadNew`/`osMutexNew`），以及用串口命令控制外设；
+- 学会了 **HC-SR04 超声波测距**的 GPIO 驱动原理（10µs 触发脉冲 + ECHO 高电平测时 + 距离换算）；
+- 学会了 **CMSIS-OS 软件定时器**（`osTimerNew`/`osTimerStart`/`osTimerPeriodic`）与 **`hi_get_tick`** 系统 tick 的使用，理解 tick 与时间的关系。
