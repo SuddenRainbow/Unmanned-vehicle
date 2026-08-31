@@ -19,6 +19,7 @@
 - **`Hi3861_OLED_Ssd1306/`**：**I2C 驱动 0.91 寸 OLED（SSD1306, 128×32）**，显示字符串 + 时钟，并支持 **16×16 中文字符显示**（"鸿蒙先锋号"点阵由 WQY 字体生成）。
 - **`Hi3861_SHT20_TempHum/`**：**I2C 驱动 SHT20 温湿度传感器**，并用 **信号量（Semaphore）** 实现多任务同步（Task1 每 3 秒释放信号量，Task2 读温湿度、Task3 抢占，交替执行）。
 - **`Hi3861_Ap3216c_Light/`**：**I2C 驱动 AP3216C 三合一传感器（光照 ALS / 接近 PS / 红外 IR）+ OLED 显示 + LED 自动灯光控制**（晚上亮白天关；或晚上+有人靠近才亮，`LIGHT_MODE` 可切换）。
+- **`Hi3861_TCRT_IR/`**：**GPIO 读取红外对管（循迹模块 TCRT）**，使用 **2 个软件定时器**：一个每 3 秒打印 `hello QST`，另一个每 0.5 秒扫描左右红外对管（低电平=黑、高电平=白，循迹原理）。
 
 ## 硬件环境
 
@@ -106,6 +107,9 @@ Unmanned-vehicle/
     ├── Ap3216c.c            # 传感器读取 + 灯光逻辑(LIGHT_MODE 1/2) + OLED 显示
     ├── include/             # hal_bsp_ap3216c.h / hal_bsp_ssd1306.h / 字库
     ├── src/                 # hal_bsp_ap3216c.c / hal_bsp_ssd1306.c
+    └── BUILD.gn
+└── Hi3861_TCRT_IR/          # Hi3861 鸿蒙红外对管收发(循迹) + 2 个软件定时器
+    ├── TCRT.c              # GPIO13/14 读红外黑白 + 双定时器(hello QST 3s / 扫描 0.5s)
     └── BUILD.gn
 ```
 
@@ -253,6 +257,14 @@ Unmanned-vehicle/
   - 阈值 `ALS_NIGHT_TH` / `PS_NEAR_TH` 可调，LED 引脚 `LED_GPIO`（IO02）可改。
 - **显示**：OLED 上半行 `ALS: 178 PS: 15`、下半行 `LED: OFF IR: 10`，每秒刷新；串口同步打印。
 
+### GPIO 读取红外对管 + 双软件定时器（`Hi3861_TCRT_IR/`）
+
+- **红外对管（TCRT 循迹模块）**：发光管发射红外线，地面颜色反射信号不同——白/亮色反射强（高电平=white），黑色吸收（低电平=black）；TC_OUT_L→GPIO13、TC_OUT_R→GPIO14 输入。
+- **2 个软件定时器**（作业要求，各自独立触发）：
+  - 定时器1：`osTimerStart(id1, 300)`（300U=3s）→ 打印 `hello QST`；
+  - 定时器2：`osTimerStart(id2, 50)`（50U=0.5s）→ `GpioGetInputVal` 读左右红外并打印 `left/right black|white`。
+- 现象：`hello QST` 每 3 秒穿插在 0.5 秒一次的扫描输出中，小车压黑线时对应侧输出 `black`——循迹的核心原理。
+
 ## 课程收获
 
 ### 环境配置
@@ -280,4 +292,6 @@ Unmanned-vehicle/
 - 学会了 **SHT20 温湿度传感器**的 I2C 读写与数据换算（`SHT20_ReadData`）；
 - 学会了 **CMSIS-OS 信号量**（`osSemaphoreNew`/`osSemaphoreAcquire`/`osSemaphoreRelease`），理解用信号量进行任务间同步与共享资源互斥；
 - 学会了 **AP3216C 三合一传感器**（光照/接近/红外）的 I2C 读取与数值含义（`AP3216C_ReadData`）；
-- 学会了 **"传感器采集 → 逻辑判断 → 执行器输出"** 的完整闭环（AP3216C 判夜间/有人 → 控 LED 灯 + OLED 显示），并掌握阈值/模式可调的设计方法。
+- 学会了 **"传感器采集 → 逻辑判断 → 执行器输出"** 的完整闭环（AP3216C 判夜间/有人 → 控 LED 灯 + OLED 显示），并掌握阈值/模式可调的设计方法；
+- 学会了**红外对管（循迹模块）**的工作原理（黑色吸光=低电平、白色反射=高电平）与 GPIO 输入读取（`GpioGetInputVal`）；
+- 学会了**多软件定时器并行**的设计（不同周期回调、相互独立触发、串口现象交叉可见）。
