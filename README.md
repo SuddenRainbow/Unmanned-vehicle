@@ -18,6 +18,7 @@
 - **`Hi3861_HC-SR04_Tick/`**：**GPIO 驱动 HC-SR04 超声波测距**，使用 **2 个软件定时器**：每 3 秒测距打印距离、每 1 秒打印系统 tick 值（`hi_get_tick`）。
 - **`Hi3861_OLED_Ssd1306/`**：**I2C 驱动 0.91 寸 OLED（SSD1306, 128×32）**，显示字符串 + 时钟，并支持 **16×16 中文字符显示**（"鸿蒙先锋号"点阵由 WQY 字体生成）。
 - **`Hi3861_SHT20_TempHum/`**：**I2C 驱动 SHT20 温湿度传感器**，并用 **信号量（Semaphore）** 实现多任务同步（Task1 每 3 秒释放信号量，Task2 读温湿度、Task3 抢占，交替执行）。
+- **`Hi3861_Ap3216c_Light/`**：**I2C 驱动 AP3216C 三合一传感器（光照 ALS / 接近 PS / 红外 IR）+ OLED 显示 + LED 自动灯光控制**（晚上亮白天关；或晚上+有人靠近才亮，`LIGHT_MODE` 可切换）。
 
 ## 硬件环境
 
@@ -100,6 +101,11 @@ Unmanned-vehicle/
     ├── Sht20.c              # 3 任务信号量演示, 读温湿度
     ├── include/             # hal_bsp_sht20.h
     ├── src/                 # hal_bsp_sht20.c 驱动实现
+    └── BUILD.gn
+└── Hi3861_Ap3216c_Light/    # Hi3861 鸿蒙 AP3216C 光照/接近/红外 + OLED + LED 自动灯控
+    ├── Ap3216c.c            # 传感器读取 + 灯光逻辑(LIGHT_MODE 1/2) + OLED 显示
+    ├── include/             # hal_bsp_ap3216c.h / hal_bsp_ssd1306.h / 字库
+    ├── src/                 # hal_bsp_ap3216c.c / hal_bsp_ssd1306.c
     └── BUILD.gn
 ```
 
@@ -238,6 +244,15 @@ Unmanned-vehicle/
   - Task1：每 3 秒 `osSemaphoreRelease` 释放一次；
   - Task2 / Task3：`osSemaphoreAcquire(osWaitForever)` 阻塞抢信号量，谁抢到谁执行（Task2 读温湿度打印、Task3 打印自己的标记）——实现任务间同步/互斥。
 
+### AP3216C 光照/接近/红外 + LED 自动灯控（`Hi3861_Ap3216c_Light/`）
+
+- **三合一传感器**：AP3216C 挂 I2C0（从机地址 0x1E，8 位地址 0x3C），`AP3216C_ReadData(&ir, &als, &ps)` 一次读出红外/光照/接近三个值。
+- **灯光逻辑**（`LIGHT_MODE` 宏切换）：
+  - 模式1（夜间自动路灯）：`als < 150`（光照低=晚上）→ LED 亮，白天灭；
+  - 模式2（夜间人感灯）：`als < 150` **且** `ps > 50`（有人靠近）→ 亮，无人不亮；
+  - 阈值 `ALS_NIGHT_TH` / `PS_NEAR_TH` 可调，LED 引脚 `LED_GPIO`（IO02）可改。
+- **显示**：OLED 上半行 `ALS: 178 PS: 15`、下半行 `LED: OFF IR: 10`，每秒刷新；串口同步打印。
+
 ## 课程收获
 
 ### 环境配置
@@ -263,4 +278,6 @@ Unmanned-vehicle/
 - 学会了 **CMSIS-OS 软件定时器**（`osTimerNew`/`osTimerStart`/`osTimerPeriodic`）与 **`hi_get_tick`** 系统 tick 的使用，理解 tick 与时间的关系；
 - 学会了 **I2C 总线**概念与 **`I2cInit`/`I2cWrite`** 的使用，完成 **SSD1306 OLED** 字符/汉字显示；
 - 学会了 **SHT20 温湿度传感器**的 I2C 读写与数据换算（`SHT20_ReadData`）；
-- 学会了 **CMSIS-OS 信号量**（`osSemaphoreNew`/`osSemaphoreAcquire`/`osSemaphoreRelease`），理解用信号量进行任务间同步与共享资源互斥。
+- 学会了 **CMSIS-OS 信号量**（`osSemaphoreNew`/`osSemaphoreAcquire`/`osSemaphoreRelease`），理解用信号量进行任务间同步与共享资源互斥；
+- 学会了 **AP3216C 三合一传感器**（光照/接近/红外）的 I2C 读取与数值含义（`AP3216C_ReadData`）；
+- 学会了 **"传感器采集 → 逻辑判断 → 执行器输出"** 的完整闭环（AP3216C 判夜间/有人 → 控 LED 灯 + OLED 显示），并掌握阈值/模式可调的设计方法。
