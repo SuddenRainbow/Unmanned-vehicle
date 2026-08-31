@@ -33,6 +33,8 @@ int fputc(int ch, FILE *f)
 u8 USART_RX_BUF[USART_REC_LEN];     //接收缓冲,最大USART_REC_LEN个字节.
 u8 USART_RX_STA=0;       //接收状态标记	  
 u8 count=0;
+u8 MOT_FRAME[6]={0};  /* 0xFC frame: dirA,spdA,dirB,spdB */
+u8 MOT_FRAME_OK=0;    /* frame received */
 void uart_init(u32 bound){
   //GPIO端口设置
   GPIO_InitTypeDef GPIO_InitStructure;

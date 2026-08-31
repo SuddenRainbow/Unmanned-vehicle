@@ -1,6 +1,8 @@
 #include "stm32f10x.h"
 #include "sys.h"
 #include "motor.h"
+extern u8 MOT_FRAME[6];
+extern u8 MOT_FRAME_OK;
 
 int main(void)
 {
@@ -33,7 +35,15 @@ int main(void)
 			printf("电机停止\r\n");
 		}
 
-		if(run==1)
+		if(MOT_FRAME_OK)      // apply 0xFC motor frame
+		{
+			s8 a=MOT_FRAME[1], b=MOT_FRAME[3];
+			if(MOT_FRAME[0])a=-a;  // dir 1=reverse
+			if(MOT_FRAME[2])b=-b;
+			Set_Pwm(a*48,b*48);   // -150..150 -> -7199..7199
+			MOT_FRAME_OK=0;
+		}
+		else if(run==1)
 			Set_Pwm(2500,2500);   //左右轮运行
 		else
 			Set_Pwm(0,0);         //左右轮停止
