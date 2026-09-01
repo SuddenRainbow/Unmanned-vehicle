@@ -10,7 +10,8 @@
 
 - **`跑马灯/`**：串口收发打印 + 炫彩灯跑马灯（驱动前后共 **12 颗 WS2812 可寻址 RGB 灯**，前灯 6 颗 + 尾灯 6 颗）。
 - **`4_PWM驱动机电/`**：**TIM4 输出 PWM** 驱动左右两个电机，支持调速与正反转，并可用串口命令控制电机启停。
-- **6_PID速度闭环直线/**：**增量式 PID 速度闭环**，编码器反馈控制两轮转速一致，上电自动启动并保持直线行驶。
+- **`6_PID速度闭环直线/`**：**增量式 PID 速度闭环**，编码器反馈控制两轮转速一致，上电自动启动并保持直线行驶。
+- **`7_系统通信协议/`**：**任务24 系统通信协议**（STM32↔Hi3861 双系统通信）——STM32 端解析 6 字节协议帧（0xFC…0xFD）并执行 PID 闭环，Hi3861 端位于 `7_系统通信协议/12.0_UART_Correspondence/`。
 
 **二、Hi3861 鸿蒙应用部分**（基于 **OpenHarmony 1.0 + Hi3861V100**，使用 gn/ninja + scons 构建）：
 
@@ -87,6 +88,16 @@ Unmanned-vehicle/
 │   ├── QST_HARDWARE/        # motor/encoder/speed_ctrl(PID)/colorful_led/SYSTEM_CONTROL
 │   ├── CORE/
 │   └── STM32F10x_FWLib/
+├── 7_系统通信协议/            # 任务24 STM32↔Hi3861 系统通信协议
+│   ├── USER/                # STM32端: 协议帧解析+PID闭环
+│   ├── SYSTEM/              # delay/sys/usart(0xFC..0xFD帧解析)
+│   ├── QST_HARDWARE/        # motor/encoder/speed_ctrl/colorful_led/SYSTEM_CONTROL
+│   ├── CORE/
+│   ├── STM32F10x_FWLib/
+│   └── 12.0_UART_Correspondence/   # Hi3861端: 协议帧发送(四动作验证)
+│       ├── correspondence.c
+│       ├── BUILD.gn
+│       └── app_BUILD_corr.gn
 ├── Hi3861_SG90_UART/        # Hi3861 鸿蒙 GPIO 驱动 SG90 舵机（串口可控）
 │   ├── SG90.c               # 舵机 PWM + 串口命令解析 + 多任务
 │   └── BUILD.gn             # OpenHarmony 构建定义
@@ -123,7 +134,7 @@ Unmanned-vehicle/
 
 ### STM32 部分
 
-1. 用 Keil MDK5 打开对应工程的工程文件（`跑马灯/USER/Template.uvprojx`、`4_PWM驱动机电/USER/Template.uvprojx` 或 `6_PID速度闭环直线/USER/Template.uvprojx`）。
+1. 用 Keil MDK5 打开对应工程的工程文件（`跑马灯/USER/Template.uvprojx`、`4_PWM驱动机电/USER/Template.uvprojx`、`6_PID速度闭环直线/USER/Template.uvprojx` 或 `7_系统通信协议/USER/Template.uvprojx`）。
 2. 菜单 **Project → Rebuild all target files**（或 `F7`），确保 `0 Error(s)`。
 3. 连接 ST-Link，点 **Download**（`F8`）烧录到单片机。
 4. 建议在 `Options for Target → Debug → ST-Link → Settings → Flash Download` 勾选 **Reset and Run**，下载后自动运行。
@@ -211,6 +222,13 @@ Unmanned-vehicle/
    ```
 4. 在超声波模块前伸手/挡板，`distance` 数值会变化。
 
+## 使用方法五：系统通信协议（`7_系统通信协议/`，STM32↔Hi3861）
+1. STM32：打开 `7_系统通信协议/USER/Template.uvprojx`，Rebuild → Download（接电池）。
+2. Hi3861：把 `7_系统通信协议/12.0_UART_Correspondence/` 放到 OpenHarmony `applications/sample/wifi-iot/app/` 下，在 app/BUILD.gn 注册 `"12.0_UART_Correspondence:correspondence"`，`python3 build.py wifiiot` 后 HiBurn 烧录。
+3. 接线：3861 GPIO11(UART2_TX)→STM32 PA10(RX)，GPIO12→PA9(TX)，共地，115200。
+4. 上电验证四动作：前进 1s → 后退 1s → 左转 1s → 右转 1s 循环。
+> 协议帧：`0xFC | 左方向(0正/1反) | 左速度 | 右方向 | 右速度 | 0xFD`，速度精度 0.01 转/s。
+
 ## 核心代码思路
 
 ### 炫彩灯跑马灯（`跑马灯/`）
@@ -225,6 +243,9 @@ Unmanned-vehicle/
 - 占空比 = CCR / (ARR+1)；`Set_Pwm()` 用 `myabs()` 取绝对值、`7199-myabs()` 反向互补，实现正反转。
 - L9110S 驱动：IA 接 PWM（PB6/PB7 = TIM4 CH1/CH2），IB 接方向（PB13/PB14）；`Set_Pwm(0,0)` 即停止。
 
+### 系统通信协议（`7_系统通信协议/`，任务24）
+- STM32 端：串口中断按 `0xFC` 帧头、`0xFD` 帧尾解析 6 字节帧 → `CAR_buff[4]` → 方向还原（1 取负）→ 倒车灯 → `CalculateAndControlMotors()`（转/s×280 → 脉冲/100ms）→ 左右独立增量式 PI（20ms）→ `Set_Pwm`。
+- Hi3861 端：`stm32motor_control(motorA, motorB)` 组帧（负数→方向1 并取绝对值，±150 限幅）→ `UartWrite(UART2)` 发送；封装 `car_forward/backward/left/right/stop`；双线程 + 互斥锁演示四动作。
 ### GPIO 驱动 SG90 舵机（`Hi3861_SG90_UART/`）
 
 - **软件模拟 PWM**：`set_angle(duty)` 里先拉高 GPIO2，`hi_udelay(duty)` 保持高电平，再拉低补足到 20ms 周期。
@@ -290,6 +311,7 @@ Unmanned-vehicle/
 - 学会了用 **PWM 驱动 L9110S 电机**，实现转速调节与正反转，以及用串口命令控制电机启停；
 - 学会了 **跑马灯 / 电机启停**等状态逻辑的编写，理解了「数据写入 → 刷新输出」的编程思想；
 - 学会了 **增量式 PID 速度闭环** 的设计与调参（Kp/Ki、积分/输出限幅、软启动），用编码器反馈让小车自动保持直线行驶；
+- 学会了**自定义通信协议**的设计与两端联调（帧头/帧尾、字段定义、Hi3861 与 STM32 串口交互），并完成 STM32 端协议解析与 PID 闭环执行；
 - 学会了在 **OpenHarmony** 中用 **GPIO 软件模拟 PWM** 驱动 **SG90 舵机**，理解脉宽与舵机角度的对应关系；
 - 学会了 **Hi3861 的 UART 收发**（`UartInit`/`UartRead`）与 **CMSIS-OS 多任务**（`osThreadNew`/`osMutexNew`），以及用串口命令控制外设；
 - 学会了 **HC-SR04 超声波测距**的 GPIO 驱动原理（10µs 触发脉冲 + ECHO 高电平测时 + 距离换算）；
