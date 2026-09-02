@@ -21,6 +21,7 @@
 - **`Hi3861_SHT20_TempHum/`**：**I2C 驱动 SHT20 温湿度传感器**，并用 **信号量（Semaphore）** 实现多任务同步（Task1 每 3 秒释放信号量，Task2 读温湿度、Task3 抢占，交替执行）。
 - **`Hi3861_Ap3216c_Light/`**：**I2C 驱动 AP3216C 三合一传感器（光照 ALS / 接近 PS / 红外 IR）+ OLED 显示 + LED 自动灯光控制**（晚上亮白天关；或晚上+有人靠近才亮，`LIGHT_MODE` 可切换）。
 - **`Hi3861_TCRT_IR/`**：**GPIO 读取红外对管（循迹模块 TCRT）**，使用 **2 个软件定时器**：一个每 3 秒打印 `hello QST`，另一个每 0.5 秒扫描左右红外对管（低电平=黑、高电平=白，循迹原理）。
+- **`14.0_Bluetooth_control/`**：**任务26 蓝牙遥控小车**——手机蓝牙调试器 APP 通过 **JDY-16 蓝牙模块**（UART1，9600）发字符，Hi3861 解析后按 **0xFC 协议帧经 UART2 发给 STM32** 控制电机（前/后/左/右/停/一键系列动作）。
 
 ## 硬件环境
 
@@ -128,6 +129,10 @@ Unmanned-vehicle/
 └── Hi3861_Sum_Experiment_First/  # 第一阶段综合实验(寻线/舵机测距/蓝牙/消息队列)
     ├── Sum_Experiment_First.c    # 3任务联动 + osMessageQueue 消息队列
     └── BUILD.gn
+└── 14.0_Bluetooth_control/      # 任务26 蓝牙遥控小车(JDY-16→UART1→0xFC帧→UART2→STM32)
+    ├── Control.c                # 蓝牙字符解析(W/A/S/D/O/Z) + 0xFC帧发送
+    ├── BUILD.gn
+    └── app_BUILD_corr.gn        # 注册模板 + APP_INIT_EVENT_NUM=7 提醒
 ```
 
 ## 编译与烧录
@@ -228,6 +233,13 @@ Unmanned-vehicle/
 3. 接线：3861 GPIO11(UART2_TX)→STM32 PA10(RX)，GPIO12→PA9(TX)，共地，115200。
 4. 上电验证四动作：前进 1s → 后退 1s → 左转 1s → 右转 1s 循环。
 > 协议帧：`0xFC | 左方向(0正/1反) | 左速度 | 右方向 | 右速度 | 0xFD`，速度精度 0.01 转/s。
+
+## 使用方法六：蓝牙遥控小车（`14.0_Bluetooth_control/`，任务26）
+1. STM32 烧 `7_系统通信协议` 固件；Hi3861 烧 `14.0_Bluetooth_control`（**app/BUILD.gn 注册 + 改 `APP_INIT_EVENT_NUM` 5→7**）。
+2. 手机装「蓝牙调试器」APP → 连接 **JDY-16** 蓝牙模块。
+3. 发送字符：`W`前 `S`后 `A`左 `D`右 `O`停 `Z`一键系列动作。
+4. 接线：JDY-16 TX→GPIO1 / RX→GPIO0（UART1 9600）；3861 GPIO11/12（UART2 115200）→STM32 PA10/PA9。
+> 架构：手机(蓝牙调试器APP) → JDY-16(UART1 9600) → Hi3861(UART2 115200, 0xFC帧) → STM32 → 电机。
 
 ## 核心代码思路
 
