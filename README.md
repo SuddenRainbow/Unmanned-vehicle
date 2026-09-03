@@ -21,6 +21,7 @@
 - **`Hi3861_SHT20_TempHum/`**：**I2C 驱动 SHT20 温湿度传感器**，并用 **信号量（Semaphore）** 实现多任务同步（Task1 每 3 秒释放信号量，Task2 读温湿度、Task3 抢占，交替执行）。
 - **`Hi3861_Ap3216c_Light/`**：**I2C 驱动 AP3216C 三合一传感器（光照 ALS / 接近 PS / 红外 IR）+ OLED 显示 + LED 自动灯光控制**（晚上亮白天关；或晚上+有人靠近才亮，`LIGHT_MODE` 可切换）。
 - **`Hi3861_TCRT_IR/`**：**GPIO 读取红外对管（循迹模块 TCRT）**，使用 **2 个软件定时器**：一个每 3 秒打印 `hello QST`，另一个每 0.5 秒扫描左右红外对管（低电平=黑、高电平=白，循迹原理）。
+- **`Hi3861_Obstacle_Avoid/`**：**综合任务·超声波避障 + 红外避黑胶带**——超声波（GPIO7/8）前方 <20cm 障碍（急停→后退→左转绕行），红外对管（GPIO13/14）地面黑胶带（左黑右转/右黑左转/双黑后退掉头），UART2 0xFC 帧驱动电机。
 - **`14.0_Bluetooth_control/`**：**任务26 蓝牙遥控小车**——手机蓝牙调试器 APP 通过 **JDY-16 蓝牙模块**（UART1，9600）发字符，Hi3861 解析后按 **0xFC 协议帧经 UART2 发给 STM32** 控制电机（前/后/左/右/停/一键系列动作）。
 
 ## 硬件环境
@@ -133,6 +134,9 @@ Unmanned-vehicle/
     ├── Control.c                # 蓝牙字符解析(W/A/S/D/O/Z) + 0xFC帧发送
     ├── BUILD.gn
     └── app_BUILD_corr.gn        # 注册模板 + APP_INIT_EVENT_NUM=7 提醒
+└── Hi3861_Obstacle_Avoid/   # 综合任务: 超声波避障 + 红外避黑胶带
+    ├── Obstacle_Avoid.c      # 障碍<20cm停退绕 / 黑胶带左黑右转右黑左转双黑掉头
+    └── BUILD.gn
 ```
 
 ## 编译与烧录
@@ -303,6 +307,12 @@ Unmanned-vehicle/
   - 定时器1：`osTimerStart(id1, 300)`（300U=3s）→ 打印 `hello QST`；
   - 定时器2：`osTimerStart(id2, 50)`（50U=0.5s）→ `GpioGetInputVal` 读左右红外并打印 `left/right black|white`。
 - 现象：`hello QST` 每 3 秒穿插在 0.5 秒一次的扫描输出中，小车压黑线时对应侧输出 `black`——循迹的核心原理。
+
+### 超声波避障 + 红外避黑胶带（`Hi3861_Obstacle_Avoid/`）
+
+- **超声波避障**：HC-SR04（GPIO7 触发/GPIO8 回声）测前方距离，<20cm 判为障碍 → 急停→后退→原地左转绕行→继续；`GetDistance` 加了无回波超时保护。
+- **红外避黑胶带**：GPIO13/14 读地面——左黑（左轮压带）右转、右黑左转、双黑（正对胶带）后退+掉头。
+- **优先级状态机**：障碍 > 双黑 > 左黑 > 右黑 > 直行；阈值/速度/转向时长全部 `#define` 可调。
 
 ## 课程收获
 
