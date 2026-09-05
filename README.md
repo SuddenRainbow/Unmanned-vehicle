@@ -23,6 +23,7 @@
 - **`Hi3861_TCRT_IR/`**：**GPIO 读取红外对管（循迹模块 TCRT）**，使用 **2 个软件定时器**：一个每 3 秒打印 `hello QST`，另一个每 0.5 秒扫描左右红外对管（低电平=黑、高电平=白，循迹原理）。
 - **`Hi3861_Obstacle_Avoid/`**：**综合任务·超声波避障 + 红外避黑胶带**——超声波（GPIO7/8）前方 <20cm 障碍（急停→后退→左转绕行），红外对管（GPIO13/14）地面黑胶带（左黑右转/右黑左转/双黑后退掉头），UART2 0xFC 帧驱动电机。
 - **`14.0_Bluetooth_control/`**：**任务26 蓝牙遥控小车**——手机蓝牙调试器 APP 通过 **JDY-16 蓝牙模块**（UART1，9600）发字符，Hi3861 解析后按 **0xFC 协议帧经 UART2 发给 STM32** 控制电机（前/后/左/右/停/一键系列动作）。
+- **`test6-way/`**：**巡线实验**——Hi3861 读取左右红外（GPIO13/14）判断黑线位置，经 UART2（GPIO11/12，115200）发 **0xFC 电机帧** 给 STM32；STM32 端 TIM4 PWM 驱动电机 + WS2812 车灯，按「黑-白-黑」判定终点并停车闪灯。
 
 ## 硬件环境
 
@@ -134,9 +135,14 @@ Unmanned-vehicle/
     ├── Control.c                # 蓝牙字符解析(W/A/S/D/O/Z) + 0xFC帧发送
     ├── BUILD.gn
     └── app_BUILD_corr.gn        # 注册模板 + APP_INIT_EVENT_NUM=7 提醒
-└── Hi3861_Obstacle_Avoid/   # 综合任务: 超声波避障 + 红外避黑胶带
-    ├── Obstacle_Avoid.c      # 障碍<20cm停退绕 / 黑胶带左黑右转右黑左转双黑掉头
-    └── BUILD.gn
+├── Hi3861_Obstacle_Avoid/   # 综合任务: 超声波避障 + 红外避黑胶带
+│   ├── Obstacle_Avoid.c      # 障碍<20cm停退绕 / 黑胶带左黑右转右黑左转双黑掉头
+│   └── BUILD.gn
+└── test6-way/                # 巡线实验: Hi3861 红外循线 + STM32 电机/车灯
+    ├── way.c                 # Hi3861 巡线主程序(红外判断/终点检测/岔路处理)
+    ├── BUILD.gn
+    ├── README.md             # 项目说明 + 调参记录
+    └── STM32/                # STM32 端源码(main/usart/motor/colorful_led)
 ```
 
 ## 编译与烧录
@@ -262,6 +268,12 @@ Unmanned-vehicle/
 ### 系统通信协议（`7_系统通信协议/`，任务24）
 - STM32 端：串口中断按 `0xFC` 帧头、`0xFD` 帧尾解析 6 字节帧 → `CAR_buff[4]` → 方向还原（1 取负）→ 倒车灯 → `CalculateAndControlMotors()`（转/s×280 → 脉冲/100ms）→ 左右独立增量式 PI（20ms）→ `Set_Pwm`。
 - Hi3861 端：`stm32motor_control(motorA, motorB)` 组帧（负数→方向1 并取绝对值，±150 限幅）→ `UartWrite(UART2)` 发送；封装 `car_forward/backward/left/right/stop`；双线程 + 互斥锁演示四动作。
+### 巡线实验（`test6-way/`）
+
+- **巡线判断**：Hi3861 每 `10ms` 读一次左右红外（GPIO13/14），`0,0` 直行、`1,0` 左修、`0,1` 右修、`1,1` 按标记处理；修正不是固定时长转向，而是每轮按最新红外值发一帧短修正，避免转过头。
+- **终点判定**：按「黑-白-黑」判定（第一根黑线约 1.9cm、白间隔约 1.5cm、再遇第二根黑线），检测到后停车并循环发 `E\n` 让 STM32 闪灯。
+- **岔路口处理**：双黑若不是终点就按岔路口处理，第 1 次左偏、第 2 次右偏、之后奇偶交替。
+- **两端协作**：Hi3861 组 `0xFC` 帧经 UART2 发 STM32，STM32 串口中断解析后 `Set_Pwm(speed*48)` 驱动电机。
 ### GPIO 驱动 SG90 舵机（`Hi3861_SG90_UART/`）
 
 - **软件模拟 PWM**：`set_angle(duty)` 里先拉高 GPIO2，`hi_udelay(duty)` 保持高电平，再拉低补足到 20ms 周期。
